@@ -1,0 +1,86 @@
+const express = require('express');
+const cors = require('cors');
+const app = express();
+
+app.use(cors());
+app.use(express.json());
+
+let keysDB = {};
+
+app.post('/sync-keys', (req, res) => {
+    try {
+        keysDB = req.body;
+        console.log(`✅ Base de datos sincronizada: ${Object.keys(keysDB).length} claves`);
+        res.json({ success: true, message: "Base de datos sincronizada" });
+    } catch (error) {
+        console.error('❌ Error sincronizando:', error);
+        res.status(500).json({ success: false, message: "Error de sincronización" });
+    }
+});
+
+app.get('/verify', (req, res) => {
+    const { key, hwid } = req.query;
+    
+    console.log(`🔐 Verificando: ${key}, HWID: ${hwid}`);
+    
+    if (!key || !hwid) {
+        return res.send("MISSING_DATA");
+    }
+    
+    if (!keysDB[key]) {
+        return res.send("INVALID_KEY");
+    }
+    
+    const keyData = keysDB[key];
+    
+    if (keyData.status !== 'active') {
+        return res.send("INACTIVE_KEY");
+    }
+    
+    if (keyData.expires_at && new Date() > new Date(keyData.expires_at)) {
+        return res.send("EXPIRED_KEY");
+    }
+    
+    if (!keyData.hwid) {
+        keyData.hwid = hwid;
+        return res.send("VALID_FIRST_TIME");
+    } else if (keyData.hwid !== hwid) {
+        return res.send("INVALID_HWID");
+    }
+    
+    res.send("VALID");
+});
+
+app.get('/key-info', (req, res) => {
+    const { key } = req.query;
+    
+    if (!keysDB[key]) {
+        return res.json({ success: false, message: "Clave no encontrada" });
+    }
+    
+    res.json({ success: true, data: keysDB[key] });
+});
+
+app.post('/reset-hwid', (req, res) => {
+    const { key } = req.body;
+    
+    if (!keysDB[key]) {
+        return res.json({ success: false, message: "Clave no encontrada" });
+    }
+    
+    keysDB[key].hwid = null;
+    res.json({ success: true, message: "HWID reseteado" });
+});
+
+app.get('/status', (req, res) => {
+    res.json({ 
+        status: 'online', 
+        keys: Object.keys(keysDB).length,
+        timestamp: new Date().toISOString()
+    });
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🔐 Servidor ejecutándose en puerto ${PORT}`);
+});
